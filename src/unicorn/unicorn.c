@@ -9,6 +9,8 @@
 
 int unicorn_run_root_group(UnicornGroupItemRegistration *root_items, size_t item_count)
 {
+    unicorn_load_config();
+
     UnicornTestGroup *root_group = unicorn_new_test_group("root", root_items, item_count);
     UnicornTestSession *test_session = unicorn_new_test_session();
 
