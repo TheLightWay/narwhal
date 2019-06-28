@@ -56,3 +56,6 @@ dkms.conf
 
 # Build directory
 build/
+
+# Python virtual environment
+.venv/
