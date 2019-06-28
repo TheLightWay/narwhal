@@ -18,6 +18,10 @@ BUILD_AMALGAMATION = $(BUILD_DIR)/amalgamation
 SHARED_LIB = $(BUILD_LIB)/$(LIB_FILE)
 TEST_EXEC = $(BUILD_DIR)/$(TEST_NAME)
 
+NARMOCK = $(SRC_DIR)/narmock/narmock.py
+MOCKS_SRC = $(TEST_DIR)/__mocks__.c
+MOCKS_HEADER = $(TEST_DIR)/__mocks__.h
+
 AMALGAMATED_SOURCE = $(BUILD_AMALGAMATION)/$(LIB_NAME).c
 AMALGAMATED_HEADER = $(BUILD_AMALGAMATION)/$(LIB_NAME).h
 AMALGAMATED_SOURCE_CONFIG = $(AMALGAMATED_SOURCE).json
@@ -44,7 +48,7 @@ SHARED_HEADERS = $(HEADERS:$(SRC_DIR)/%.h=$(BUILD_INCLUDE)/%.h)
 
 INC_DIRS = $(SRC_DIR) $(TEST_DIR)
 INC_FLAGS = $(addprefix -I,$(INC_DIRS))
-CPPFLAGS = $(INC_FLAGS) $(DFLAGS) -MMD -MP
+CPPFLAGS = $(INC_FLAGS) $(DFLAGS)
 
 
 ifeq ($(DEBUG),1)
@@ -59,7 +63,7 @@ INSTALL_INCLUDE = $(DESTDIR)/include
 INSTALL_LIB = $(DESTDIR)/lib
 
 
-.PHONY: all install uninstall all_tests test format release clean
+.PHONY: all install uninstall all_tests test mocks format release clean
 
 all: $(SHARED_LIB) $(SHARED_HEADERS) $(AMALGAMATED_SOURCE) $(AMALGAMATED_HEADER)
 
@@ -76,6 +80,8 @@ all_tests: $(TEST_EXEC)
 
 test: all_tests
 	@$(TEST_EXEC)
+
+mocks: $(MOCKS_HEADER)
 
 format:
 	clang-format -i $(SRCS) $(HEADERS) $$(find $(TEST_DIR) examples -name *.c) $$(find $(TEST_DIR) examples -name *.h)
@@ -101,14 +107,20 @@ $(SHARED_LIB): $(OBJS)
 
 $(BUILD_OBJ)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) -MMD -MP $(CFLAGS) -c $< -o $@
 
 $(BUILD_INCLUDE)/%.h: $(SRC_DIR)/%.h
 	@mkdir -p $(dir $@)
 	cp $< $@
 
-$(TEST_EXEC): $(OBJS) $(TEST_OBJS)
-	$(CC) $(LDFLAGS) $(ASAN_FLAGS) $(OBJS) $(TEST_OBJS) -o $@
+$(TEST_EXEC): $(MOCKS_HEADER) $(OBJS) $(TEST_OBJS)
+	$(CC) $(LDFLAGS) $$($(NARMOCK) -f $<) $(ASAN_FLAGS) $(OBJS) $(TEST_OBJS) -o $@
+
+$(MOCKS_SRC): $(filter-out $(MOCKS_SRC),$(TEST_SRCS))
+	$(CC) $(CPPFLAGS) -E $^ | $(NARMOCK) -g $@
+
+$(MOCKS_HEADER): $(MOCKS_SRC)
+	$(NARMOCK) -d $@ $<
 
 
 -include $(DEPS) $(TEST_DEPS)

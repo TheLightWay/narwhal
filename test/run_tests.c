@@ -4,9 +4,14 @@
 #include "test_diff.h"
 #include "test_meta.h"
 #include "test_meta_group.h"
+#include "test_mocking.h"
 
 int main()
 {
-    return RUN_TESTS(
-        capture_output_tests, collection_tests, diff_tests, run_meta_group, run_meta_test);
+    return RUN_TESTS(capture_output_tests,
+                     collection_tests,
+                     diff_tests,
+                     mocking_tests,
+                     run_meta_group,
+                     run_meta_test);
 }

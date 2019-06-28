@@ -1,0 +1,519 @@
+#!/usr/bin/env python
+
+"""
+Mocking utility for Narwhal (https://github.com/vberlier/narwhal)
+
+MIT License
+
+Copyright (c) 2019 Valentin Berlier
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+from __future__ import print_function, unicode_literals
+
+import sys
+import re
+from collections import namedtuple, defaultdict
+from argparse import ArgumentParser, FileType
+from textwrap import dedent
+
+
+FunctionDeclaration = namedtuple(
+    "FunctionDeclaration", ["name", "parameters", "return_type", "source"]
+)
+
+
+SourceLocation = namedtuple("SourceLocation", ["filename", "line"])
+
+
+class Token(namedtuple("Token", ["type", "value", "span"])):
+    def is_punctuation(self, value):
+        return self.type == "PUNCTUATION" and self.value == value
+
+    @property
+    def is_prefix(self):
+        return self.type == "KEYWORD" and self.value in (
+            "typedef",
+            "extern",
+            "static",
+            "auto",
+            "register",
+            "__extension__",
+        )
+
+
+class FunctionDeclarationParser(object):
+    linemarker = re.compile(r'^# (\d+) "((?:\\.|[^\\"])*)"((?: [1234])*)$')
+
+    tokens = (
+        ("LINEMARKER", r"^#.*$"),
+        (
+            "KEYWORD",
+            "\\b(?:auto|break|case|char|const|continue|default|do|double|else|enum|extern|float"
+            "|for|goto|if|int|long|register|return|short|signed|sizeof|static|struct|switch"
+            "|typedef|union|unsigned|void|volatile|while|__extension__)\\b",
+        ),
+        ("IDENTIFIER", r"\b[a-zA-Z_](?:[a-zA-Z_0-9])*\b"),
+        ("CHARACTER", r"L?'(?:\\.|[^\\'])+'"),
+        ("STRING", r'L?"(?:\\.|[^\\"])*"'),
+        (
+            "PUNCTUATION",
+            r"\.\.\.|>>=|<<=|\+=|-=|\*=|/=|%=|&=|\^=|\|=|>>|<<|\+\+|--|->|&&|\|\||<=|>=|"
+            r"==|!=|;|\{|\}|,|:|=|\(|\)|\[|\]|\.|&|!|~|-|\+|\*|/|%|<|>|\^|\||\?",
+        ),
+        ("SPACE", r"[ \t\v\n\f]*"),
+        ("IGNORE", r".+?"),
+    )
+
+    ignored_tokens = "SPACE", "IGNORE"
+
+    regex = re.compile(
+        "|".join("(?P<" + token + ">" + pattern + ")" for token, pattern in tokens),
+        flags=re.MULTILINE,
+    )
+
+    def __init__(self, string):
+        self.string = string
+        self.token_stream = self.tokenize(string)
+        self.current = None
+
+        self.bracket_stack = []
+        self.source_context = []
+
+    @classmethod
+    def tokenize(cls, string):
+        for match in cls.regex.finditer(string):
+            if match.lastgroup not in cls.ignored_tokens:
+                yield Token(match.lastgroup, match.group().strip(), match.span())
+
+    def __iter__(self):
+        while self.next():
+            function = self.parse_function_declaration()
+
+            if function is not None:
+                yield function
+
+            while self.current and not (
+                self.current.type == "PUNCTUATION"
+                and self.current.value in (";", "}")
+                and not self.bracket_stack
+            ):
+                self.next()
+
+    def next(self):
+        self.current = next(self.token_stream, None)
+
+        if not self.current:
+            return None
+
+        if self.current.type == "PUNCTUATION":
+            if self.current.value in "({[":
+                self.bracket_stack.append(")}]"["({[".index(self.current.value)])
+            elif self.bracket_stack and self.current.value == self.bracket_stack[-1]:
+                self.bracket_stack.pop()
+
+        elif self.current.type == "LINEMARKER":
+            line, filename, flags = self.linemarker.match(self.current.value).groups()
+            context = SourceLocation(filename, int(line))
+
+            if "1" in flags:
+                self.source_context.append(context)
+            elif "2" in flags:
+                self.source_context.pop()
+
+            try:
+                self.source_context[-1] = context
+            except IndexError:
+                self.source_context.append(context)
+
+            self.next()
+
+        return self.current
+
+    def parse_function_declaration(self):
+        if self.bracket_stack:
+            return None
+
+        while self.current and self.current.is_prefix:
+            self.next()
+
+        return_type = []
+
+        while self.current and not self.current.is_punctuation("("):
+            if self.current.is_punctuation(";"):
+                return None
+
+            return_type.append(self.current.value)
+            self.next()
+
+        if not return_type:
+            return None
+
+        func_name = return_type.pop()
+
+        self.next()
+
+        parameters = []
+
+        while self.current and not self.current.is_punctuation(")"):
+            if self.current.is_punctuation(";"):
+                break
+
+            param = []
+
+            while self.current and not (
+                self.current.type == "PUNCTUATION"
+                and (
+                    self.current.value == ","
+                    and len(self.bracket_stack) == 1
+                    or self.current.value == ")"
+                    and not self.bracket_stack
+                )
+            ):
+                if self.current.is_punctuation(";"):
+                    break
+
+                param.append(self.current)
+                self.next()
+
+            if param:
+                param_name = next(
+                    (token for token in reversed(param) if token.type == "IDENTIFIER"),
+                    None,
+                )
+
+                if param_name is None:
+                    break
+
+                param.remove(param_name)
+                parameters.append(
+                    ("arg" + str(len(parameters) + 1), [t.value for t in param])
+                )
+
+            if self.current and self.current.value == ",":
+                self.next()
+
+        self.next()
+
+        return FunctionDeclaration(
+            func_name,
+            parameters,
+            return_type,
+            (self.source_context[:2][-1].filename if self.source_context else ""),
+        )
+
+
+def template(string):
+    return dedent(
+        re.sub(r"(\{(?![a-zA-Z_])|(?<![a-zA-Z_])\})", r"\1\1", string)
+    ).strip()
+
+
+class CodeGenerator(object):
+    DECL_BEGIN = "/*\nNARMOCK_DECLARATIONS_BEGIN\n*/"
+    DECL_END = "/*\nNARMOCK_DECLARATIONS_END\n*/"
+
+    DECL_MARKER = "NARMOCK_DECLARATION"
+    FLAG_MARKER = "NARMOCK_LINKER_FLAGS"
+    IMPL_MARKER = "NARMOCK_IMPLEMENTATION"
+
+    file_template = (
+        template(
+            """
+            {DECL_BEGIN}
+
+            {includes}
+
+            {declarations}
+
+            {DECL_END}
+
+            {implementations}
+            """
+        )
+        + "\n"
+    )
+
+    mock_declaration = template(
+        """
+        /*
+        {decl_marker} {func_name}
+        {flag_marker} {linker_flags}
+        */
+
+        typedef struct {parameters_struct}
+        {
+            {function_parameter_fields}
+        } {parameters_struct};
+
+        typedef struct {state_type} {state_type};
+
+        struct {state_type}
+        {
+            {state_type} *(*mock_return)({return_type} return_value);
+            {state_type} *(*mock_implementation)({return_type} (*implementation)({function_parameters}));
+            {state_type} *(*mock_return_once)({return_type} return_value);
+            {state_type} *(*mock_implementation_once)({return_type} (*implementation)({function_parameters}));
+            {state_type} *(*disable_mock)(void);
+        };
+
+        {mock_aliases}
+        """
+    )
+
+    mock_implementation = template(
+        """
+        /*
+        {impl_marker} {func_name}
+        */
+
+        {return_type} {real_func}({function_parameters});
+
+        typedef struct {private_state_type} {private_state_type};
+
+        struct {private_state_type}
+        {
+            {state_type} public;
+
+            int state;
+            {return_type} return_value;
+            {return_type} (*implementation)({function_parameters});
+        };
+
+        {state_type} *_narmock_function_mock_return_{func_name}({return_type} return_value);
+        {state_type} *_narmock_function_mock_implementation_{func_name}({return_type} (*implementation)({function_parameters}));
+        {state_type} *_narmock_function_mock_return_once_{func_name}({return_type} return_value);
+        {state_type} *_narmock_function_mock_implementation_once_{func_name}({return_type} (*implementation)({function_parameters}));
+        {state_type} *_narmock_function_disable_mock_{func_name}();
+
+        {private_state_type} {state_name} =
+        {
+            .public = {
+                .mock_return = _narmock_function_mock_return_{func_name},
+                .mock_implementation = _narmock_function_mock_implementation_{func_name},
+                .mock_return_once = _narmock_function_mock_return_once_{func_name},
+                .mock_implementation_once = _narmock_function_mock_implementation_once_{func_name},
+                .disable_mock = _narmock_function_disable_mock_{func_name}
+            },
+
+            .state = 0
+        };
+
+        {return_type} {wrapped_func}({function_parameters})
+        {
+            switch ({state_name}.state)
+            {
+                case 1:
+                    return {state_name}.return_value;
+                case 2:
+                    return {state_name}.implementation({parameter_arguments});
+                default:
+                    return {real_func}({parameter_arguments});
+            }
+        }
+
+        {state_type} *_narmock_function_mock_return_{func_name}({return_type} return_value)
+        {
+            {state_name}.state = 1;
+            {state_name}.return_value = return_value;
+
+            return &{state_name}.public;
+        }
+
+        {state_type} *_narmock_function_mock_implementation_{func_name}({return_type} (*implementation)({function_parameters}))
+        {
+            {state_name}.state = 2;
+            {state_name}.implementation = implementation;
+
+            return &{state_name}.public;
+        }
+
+        {state_type} *_narmock_function_mock_return_once_{func_name}({return_type} return_value)
+        {
+            (void)return_value;
+
+            return &{state_name}.public;
+        }
+
+        {state_type} *_narmock_function_mock_implementation_once_{func_name}({return_type} (*implementation)({function_parameters}))
+        {
+            (void)implementation;
+
+            return &{state_name}.public;
+        }
+
+        {state_type} *_narmock_function_disable_mock_{func_name}()
+        {
+            {state_name}.state = 0;
+
+            return &{state_name}.public;
+        }
+
+        {mock_aliases}
+        """
+    )
+
+    def __init__(self, filename):
+        self.filename = filename
+        self.implementations = []
+        self.declarations = []
+
+    def generate_implementation_file(self):
+        return self.file_template.format(
+            includes="/* TODO: includes and guards */",
+            declarations="\n\n".join(self.declarations),
+            implementations="\n\n".join(self.implementations),
+            DECL_BEGIN=self.DECL_BEGIN,
+            DECL_END=self.DECL_END,
+        )
+
+    def add_mock(self, aliases, function):
+        decl_marker = self.DECL_MARKER
+        flag_marker = self.FLAG_MARKER
+        impl_marker = self.IMPL_MARKER
+
+        func_name = function.name
+
+        state_name = "_narmock_state_global_" + func_name
+        state_type = "_narmock_state_type_" + func_name
+        private_state_type = "_narmock_state_private_type_" + func_name
+
+        return_type = " ".join(function.return_type)
+
+        function_parameter_fields = "\n    ".join(
+            (" ".join(param_type) + " " + param_name + ";").replace("* ", "*")
+            for param_name, param_type in function.parameters
+        )
+        parameters_struct = "_narmock_parameters_" + func_name
+
+        wrapped_func = "__wrap_" + func_name
+        real_func = "__real_" + func_name
+
+        function_parameters = ", ".join(
+            (" ".join(param_type) + " " + param_name).replace("* ", "*")
+            for param_name, param_type in function.parameters
+        )
+
+        parameter_arguments = ", ".join(name for name, _ in function.parameters)
+
+        linker_flags = " ".join(["-Wl,--wrap=" + func_name])
+
+        mock_aliases = "\n".join(state_type + " *" + alias + "();" for alias in aliases)
+
+        self.declarations.append(self.mock_declaration.format(**locals()))
+
+        mock_aliases = "\n\n".join(
+            state_type
+            + " *"
+            + alias
+            + "()\n{\n    return &"
+            + state_name
+            + ".public;\n}"
+            for alias in aliases
+        )
+
+        self.implementations.append(self.mock_implementation.format(**locals()))
+
+
+def collect_mocked_functions(prefixes, expanded_source):
+    mock_aliases = defaultdict(set)
+    regex = (
+        r"(_narmock_state_type_[A-Za-z0-9_]+\s*\*\s*)?\b((?:"
+        + "|".join(prefixes)
+        + r")([A-Za-z0-9_]+))\s*\(\s*\)"
+    )
+
+    for match in re.finditer(regex, expanded_source):
+        return_type, alias, mocked_function = match.groups()
+        if not return_type:
+            mock_aliases[mocked_function].add(alias)
+
+    for function in FunctionDeclarationParser(expanded_source):
+        if function.name not in mock_aliases:
+            continue
+
+        yield mock_aliases[function.name], function
+
+        del mock_aliases[function.name]
+
+    if mock_aliases:
+        for function in mock_aliases:
+            print("error:", "'" + function + "' undeclared", file=sys.stderr)
+        sys.exit(1)
+
+
+parser = ArgumentParser(prog="narmock", description="Mocking utility for Narwhal.")
+
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument("-g", metavar="<file>", help="generate mocks")
+group.add_argument("-d", metavar="<file>", help="extract declarations")
+group.add_argument("-f", action="store_true", help="output linker flags")
+
+parser.add_argument("-p", metavar="<string>", action="append", help="mock prefix")
+parser.add_argument(
+    "file",
+    metavar="<file>",
+    nargs="?",
+    type=FileType("r"),
+    default=sys.stdin,
+    help="expanded code or generated mocks",
+)
+
+
+def main():
+    args = parser.parse_args()
+
+    if args.g:
+        generator = CodeGenerator(args.g)
+        prefixes = ["_narwhal_mock_"] + (args.p or [])
+
+        for aliases, function in collect_mocked_functions(prefixes, args.file.read()):
+            generator.add_mock(aliases, function)
+
+        with open(args.g, "w") as implementation:
+            implementation.write(generator.generate_implementation_file())
+
+    elif args.d:
+        source = args.file.read()
+
+        try:
+            begin = source.index(CodeGenerator.DECL_BEGIN) + len(
+                CodeGenerator.DECL_BEGIN
+            )
+            end = source.index(CodeGenerator.DECL_END)
+
+            if 0 <= begin <= end:
+                with open(args.d, "w") as declarations:
+                    declarations.write(source[begin:end].strip() + "\n")
+        except ValueError:
+            pass
+
+    elif args.f:
+        print(
+            " ".join(
+                re.findall(
+                    r"\b" + CodeGenerator.FLAG_MARKER + r"\s+(.+)", args.file.read()
+                )
+            ).strip()
+        )
+
+
+if __name__ == "__main__":
+    main()
