@@ -89,8 +89,9 @@ class FunctionDeclarationParser(object):
         flags=re.MULTILINE,
     )
 
-    def __init__(self, string):
+    def __init__(self, string, filter=None):
         self.string = string
+        self.filter = set(filter) if filter is not None else None
         self.token_stream = self.tokenize(string)
         self.current = None
 
@@ -109,6 +110,9 @@ class FunctionDeclarationParser(object):
 
             if function is not None:
                 yield function
+
+            if self.filter is not None and not self.filter:
+                break
 
             while self.current and not (
                 self.current.type == "PUNCTUATION"
@@ -169,6 +173,12 @@ class FunctionDeclarationParser(object):
         func_name = return_type.pop()
 
         self.next()
+
+        if self.filter is not None:
+            if func_name in self.filter:
+                self.filter.remove(func_name)
+            else:
+                return None
 
         parameters = []
 
@@ -445,12 +455,8 @@ def collect_mocked_functions(prefixes, expanded_source):
         if not return_type:
             mock_aliases[mocked_function].add(alias)
 
-    for function in FunctionDeclarationParser(expanded_source):
-        if function.name not in mock_aliases:
-            continue
-
+    for function in FunctionDeclarationParser(expanded_source, filter=mock_aliases):
         yield mock_aliases[function.name], function
-
         del mock_aliases[function.name]
 
     if mock_aliases:
