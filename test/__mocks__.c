@@ -2,7 +2,7 @@
 NARMOCK_DECLARATIONS_BEGIN
 */
 
-/* TODO: includes and guards */
+#include "dummy_functions.h"
 
 /*
 NARMOCK_DECLARATION add

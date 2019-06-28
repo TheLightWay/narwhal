@@ -28,6 +28,7 @@ SOFTWARE.
 
 from __future__ import print_function, unicode_literals
 
+import os
 import sys
 import re
 from collections import namedtuple, defaultdict
@@ -41,6 +42,33 @@ FunctionDeclaration = namedtuple(
 
 
 SourceLocation = namedtuple("SourceLocation", ["filename", "line"])
+
+
+class IncludeDirective(namedtuple("IncludeDirective", ["path", "system"])):
+    @classmethod
+    def from_source_context(cls, source_context):
+        if not source_context:
+            return None
+
+        for source in source_context:
+            if not os.path.isabs(source.filename):
+                continue
+
+            dirname, basename = os.path.split(source.filename)
+            fullname = basename
+
+            while True:
+                dirname, basename = os.path.split(dirname)
+
+                if "include" in basename.lower():
+                    return cls(fullname, True)
+
+                if not basename:
+                    break
+
+                fullname = os.path.join(basename, fullname)
+
+        return cls(os.path.abspath(source_context[-1].filename), False)
 
 
 class Token(namedtuple("Token", ["type", "value", "span"])):
@@ -226,7 +254,7 @@ class FunctionDeclarationParser(object):
             func_name,
             parameters,
             return_type,
-            (self.source_context[:2][-1].filename if self.source_context else ""),
+            IncludeDirective.from_source_context(self.source_context),
         )
 
 
@@ -234,6 +262,21 @@ def template(string):
     return dedent(
         re.sub(r"(\{(?![a-zA-Z_])|(?<![a-zA-Z_])\})", r"\1\1", string)
     ).strip()
+
+
+HEADER_TEMPLATE = (
+    template(
+        """
+    #ifndef {guard_name}
+    #define {guard_name}
+
+    {declarations}
+
+    #endif
+    """
+    )
+    + "\n"
+)
 
 
 class CodeGenerator(object):
@@ -381,13 +424,27 @@ class CodeGenerator(object):
     )
 
     def __init__(self, filename):
-        self.filename = filename
-        self.implementations = []
+        self.filename = os.path.abspath(filename)
+        self.directory = os.path.dirname(self.filename)
+        self.system_includes = set()
+        self.local_includes = set()
         self.declarations = []
+        self.implementations = []
 
     def generate_implementation_file(self):
+        includes = (
+            "\n".join(
+                "#include <" + path + ">" for path in sorted(self.system_includes)
+            )
+            + ("\n\n" if self.system_includes and self.local_includes else "")
+            + "\n".join(
+                '#include "' + os.path.relpath(path, self.directory) + '"'
+                for path in sorted(self.local_includes)
+            )
+        )
+
         return self.file_template.format(
-            includes="/* TODO: includes and guards */",
+            includes=includes,
             declarations="\n\n".join(self.declarations),
             implementations="\n\n".join(self.implementations),
             DECL_BEGIN=self.DECL_BEGIN,
@@ -440,6 +497,12 @@ class CodeGenerator(object):
         )
 
         self.implementations.append(self.mock_implementation.format(**locals()))
+
+        if function.source:
+            if function.source.system:
+                self.system_includes.add(function.source.path)
+            else:
+                self.local_includes.add(function.source.path)
 
 
 def collect_mocked_functions(prefixes, expanded_source):
@@ -499,6 +562,16 @@ def main():
     elif args.d:
         source = args.file.read()
 
+        guard_name = (
+            re.sub(
+                r"_+",
+                "_",
+                re.sub(r"[^a-zA-Z0-9]", "_", os.path.normpath(os.path.relpath(args.d))),
+            )
+            .upper()
+            .strip("_")
+        )
+
         try:
             begin = source.index(CodeGenerator.DECL_BEGIN) + len(
                 CodeGenerator.DECL_BEGIN
@@ -506,8 +579,13 @@ def main():
             end = source.index(CodeGenerator.DECL_END)
 
             if 0 <= begin <= end:
-                with open(args.d, "w") as declarations:
-                    declarations.write(source[begin:end].strip() + "\n")
+                with open(args.d, "w") as header:
+                    header.write(
+                        HEADER_TEMPLATE.format(
+                            guard_name=guard_name,
+                            declarations=source[begin:end].strip(),
+                        )
+                    )
         except ValueError:
             pass
 

@@ -1,4 +1,7 @@
-/* TODO: includes and guards */
+#ifndef TEST_MOCKS_H
+#define TEST_MOCKS_H
+
+#include "dummy_functions.h"
 
 /*
 NARMOCK_DECLARATION add
@@ -23,3 +26,5 @@ struct _narmock_state_type_add
 };
 
 _narmock_state_type_add *_narwhal_mock_add();
+
+#endif
