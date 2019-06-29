@@ -320,10 +320,8 @@ class CodeGenerator(object):
 
         struct {state_type}
         {
-            {state_type} *(*mock_return)({return_type} return_value);
+            {state_type} *(*mock_return)({return_value_param});
             {state_type} *(*mock_implementation)({return_type} (*implementation)({function_parameters}));
-            {state_type} *(*mock_return_once)({return_type} return_value);
-            {state_type} *(*mock_implementation_once)({return_type} (*implementation)({function_parameters}));
             {state_type} *(*disable_mock)(void);
         };
 
@@ -346,14 +344,12 @@ class CodeGenerator(object):
             {state_type} public;
 
             int state;
-            {return_type} return_value;
+            {return_field}
             {return_type} (*implementation)({function_parameters});
         };
 
-        {state_type} *_narmock_function_mock_return_{func_name}({return_type} return_value);
+        {state_type} *_narmock_function_mock_return_{func_name}({return_value_param});
         {state_type} *_narmock_function_mock_implementation_{func_name}({return_type} (*implementation)({function_parameters}));
-        {state_type} *_narmock_function_mock_return_once_{func_name}({return_type} return_value);
-        {state_type} *_narmock_function_mock_implementation_once_{func_name}({return_type} (*implementation)({function_parameters}));
         {state_type} *_narmock_function_disable_mock_{func_name}();
 
         {private_state_type} {state_name} =
@@ -361,8 +357,6 @@ class CodeGenerator(object):
             .public = {
                 .mock_return = _narmock_function_mock_return_{func_name},
                 .mock_implementation = _narmock_function_mock_implementation_{func_name},
-                .mock_return_once = _narmock_function_mock_return_once_{func_name},
-                .mock_implementation_once = _narmock_function_mock_implementation_once_{func_name},
                 .disable_mock = _narmock_function_disable_mock_{func_name}
             },
 
@@ -374,7 +368,7 @@ class CodeGenerator(object):
             switch ({state_name}.state)
             {
                 case 1:
-                    return {state_name}.return_value;
+                    return {state_return_value};
                 case 2:
                     return {state_name}.implementation({parameter_arguments});
                 default:
@@ -382,10 +376,10 @@ class CodeGenerator(object):
             }
         }
 
-        {state_type} *_narmock_function_mock_return_{func_name}({return_type} return_value)
+        {state_type} *_narmock_function_mock_return_{func_name}({return_value_param})
         {
             {state_name}.state = 1;
-            {state_name}.return_value = return_value;
+            {update_state_return_value}
 
             return &{state_name}.public;
         }
@@ -394,20 +388,6 @@ class CodeGenerator(object):
         {
             {state_name}.state = 2;
             {state_name}.implementation = implementation;
-
-            return &{state_name}.public;
-        }
-
-        {state_type} *_narmock_function_mock_return_once_{func_name}({return_type} return_value)
-        {
-            (void)return_value;
-
-            return &{state_name}.public;
-        }
-
-        {state_type} *_narmock_function_mock_implementation_once_{func_name}({return_type} (*implementation)({function_parameters}))
-        {
-            (void)implementation;
 
             return &{state_name}.public;
         }
@@ -462,7 +442,14 @@ class CodeGenerator(object):
         state_type = "_narmock_state_type_" + func_name
         private_state_type = "_narmock_state_private_type_" + func_name
 
-        return_type = " ".join(function.return_type)
+        return_type = " ".join(function.return_type).strip()
+        return_value = "" if return_type == "void" else return_type + " return_value"
+        return_field = return_value and return_value + ";"
+        return_value_param = return_value or "void"
+        state_return_value = return_value and state_name + ".return_value"
+        update_state_return_value = (
+            return_value and state_return_value + " = return_value;"
+        )
 
         function_parameter_fields = "\n    ".join(
             (" ".join(param_type) + " " + param_name + ";").replace("* ", "*")

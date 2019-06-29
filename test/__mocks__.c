@@ -21,12 +21,31 @@ struct _narmock_state_type_add
 {
     _narmock_state_type_add *(*mock_return)(int return_value);
     _narmock_state_type_add *(*mock_implementation)(int (*implementation)(int arg1, int arg2));
-    _narmock_state_type_add *(*mock_return_once)(int return_value);
-    _narmock_state_type_add *(*mock_implementation_once)(int (*implementation)(int arg1, int arg2));
     _narmock_state_type_add *(*disable_mock)(void);
 };
 
 _narmock_state_type_add *_narwhal_mock_add();
+
+/*
+NARMOCK_DECLARATION output_message
+NARMOCK_LINKER_FLAGS -Wl,--wrap=output_message
+*/
+
+typedef struct _narmock_parameters_output_message
+{
+    char *arg1;
+} _narmock_parameters_output_message;
+
+typedef struct _narmock_state_type_output_message _narmock_state_type_output_message;
+
+struct _narmock_state_type_output_message
+{
+    _narmock_state_type_output_message *(*mock_return)(void);
+    _narmock_state_type_output_message *(*mock_implementation)(void (*implementation)(char *arg1));
+    _narmock_state_type_output_message *(*disable_mock)(void);
+};
+
+_narmock_state_type_output_message *_narwhal_mock_output_message();
 
 /*
 NARMOCK_DECLARATIONS_END
@@ -51,8 +70,6 @@ struct _narmock_state_private_type_add
 
 _narmock_state_type_add *_narmock_function_mock_return_add(int return_value);
 _narmock_state_type_add *_narmock_function_mock_implementation_add(int (*implementation)(int arg1, int arg2));
-_narmock_state_type_add *_narmock_function_mock_return_once_add(int return_value);
-_narmock_state_type_add *_narmock_function_mock_implementation_once_add(int (*implementation)(int arg1, int arg2));
 _narmock_state_type_add *_narmock_function_disable_mock_add();
 
 _narmock_state_private_type_add _narmock_state_global_add =
@@ -60,8 +77,6 @@ _narmock_state_private_type_add _narmock_state_global_add =
     .public = {
         .mock_return = _narmock_function_mock_return_add,
         .mock_implementation = _narmock_function_mock_implementation_add,
-        .mock_return_once = _narmock_function_mock_return_once_add,
-        .mock_implementation_once = _narmock_function_mock_implementation_once_add,
         .disable_mock = _narmock_function_disable_mock_add
     },
 
@@ -97,20 +112,6 @@ _narmock_state_type_add *_narmock_function_mock_implementation_add(int (*impleme
     return &_narmock_state_global_add.public;
 }
 
-_narmock_state_type_add *_narmock_function_mock_return_once_add(int return_value)
-{
-    (void)return_value;
-
-    return &_narmock_state_global_add.public;
-}
-
-_narmock_state_type_add *_narmock_function_mock_implementation_once_add(int (*implementation)(int arg1, int arg2))
-{
-    (void)implementation;
-
-    return &_narmock_state_global_add.public;
-}
-
 _narmock_state_type_add *_narmock_function_disable_mock_add()
 {
     _narmock_state_global_add.state = 0;
@@ -121,4 +122,77 @@ _narmock_state_type_add *_narmock_function_disable_mock_add()
 _narmock_state_type_add *_narwhal_mock_add()
 {
     return &_narmock_state_global_add.public;
+}
+
+/*
+NARMOCK_IMPLEMENTATION output_message
+*/
+
+void __real_output_message(char *arg1);
+
+typedef struct _narmock_state_private_type_output_message _narmock_state_private_type_output_message;
+
+struct _narmock_state_private_type_output_message
+{
+    _narmock_state_type_output_message public;
+
+    int state;
+    
+    void (*implementation)(char *arg1);
+};
+
+_narmock_state_type_output_message *_narmock_function_mock_return_output_message(void);
+_narmock_state_type_output_message *_narmock_function_mock_implementation_output_message(void (*implementation)(char *arg1));
+_narmock_state_type_output_message *_narmock_function_disable_mock_output_message();
+
+_narmock_state_private_type_output_message _narmock_state_global_output_message =
+{
+    .public = {
+        .mock_return = _narmock_function_mock_return_output_message,
+        .mock_implementation = _narmock_function_mock_implementation_output_message,
+        .disable_mock = _narmock_function_disable_mock_output_message
+    },
+
+    .state = 0
+};
+
+void __wrap_output_message(char *arg1)
+{
+    switch (_narmock_state_global_output_message.state)
+    {
+        case 1:
+            return ;
+        case 2:
+            return _narmock_state_global_output_message.implementation(arg1);
+        default:
+            return __real_output_message(arg1);
+    }
+}
+
+_narmock_state_type_output_message *_narmock_function_mock_return_output_message(void)
+{
+    _narmock_state_global_output_message.state = 1;
+    
+
+    return &_narmock_state_global_output_message.public;
+}
+
+_narmock_state_type_output_message *_narmock_function_mock_implementation_output_message(void (*implementation)(char *arg1))
+{
+    _narmock_state_global_output_message.state = 2;
+    _narmock_state_global_output_message.implementation = implementation;
+
+    return &_narmock_state_global_output_message.public;
+}
+
+_narmock_state_type_output_message *_narmock_function_disable_mock_output_message()
+{
+    _narmock_state_global_output_message.state = 0;
+
+    return &_narmock_state_global_output_message.public;
+}
+
+_narmock_state_type_output_message *_narwhal_mock_output_message()
+{
+    return &_narmock_state_global_output_message.public;
 }
