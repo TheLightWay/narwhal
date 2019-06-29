@@ -21,6 +21,11 @@ TEST(add_function)
     ASSERT_EQ(add(1, 2), 4);
 }
 
+void fake_output_message(char *message)
+{
+    printf("fake %s\n", message);
+}
+
 TEST(output_message_function)
 {
     CAPTURE_OUTPUT(original_output) { output_message("hello"); }
@@ -30,6 +35,11 @@ TEST(output_message_function)
 
     CAPTURE_OUTPUT(mocked_output) { output_message("hello"); }
     ASSERT_EQ(mocked_output, "");
+
+    MOCK(output_message)->mock_implementation(fake_output_message);
+
+    CAPTURE_OUTPUT(fake_output) { output_message("hello"); }
+    ASSERT_EQ(fake_output, "fake hello\n");
 }
 
 TEST(time_function)
