@@ -1,3 +1,5 @@
+#include <time.h>
+
 #include "__mocks__.h"
 #include "dummy_functions.h"
 #include "narwhal/narwhal.h"
@@ -30,4 +32,15 @@ TEST(output_message_function)
     ASSERT_EQ(mocked_output, "");
 }
 
-TEST_GROUP(mocking_tests, { add_function, output_message_function });
+TEST(time_function)
+{
+    time_t start = time(NULL);
+
+    MOCK(time)->mock_return(0);
+    ASSERT_EQ(time(NULL), 0);
+
+    MOCK(time)->disable_mock();
+    ASSERT_GE(time(NULL), start);
+}
+
+TEST_GROUP(mocking_tests, { add_function, output_message_function, time_function });

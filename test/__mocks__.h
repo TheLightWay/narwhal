@@ -1,7 +1,30 @@
 #ifndef TEST_MOCKS_H
 #define TEST_MOCKS_H
 
+#include <time.h>
+
 #include "dummy_functions.h"
+
+/*
+NARMOCK_DECLARATION time
+NARMOCK_LINKER_FLAGS -Wl,--wrap=time
+*/
+
+typedef struct _narmock_parameters_time
+{
+    time_t *arg1;
+} _narmock_parameters_time;
+
+typedef struct _narmock_state_type_time _narmock_state_type_time;
+
+struct _narmock_state_type_time
+{
+    _narmock_state_type_time *(*mock_return)(time_t return_value);
+    _narmock_state_type_time *(*mock_implementation)(time_t (*implementation)(time_t *arg1));
+    _narmock_state_type_time *(*disable_mock)(void);
+};
+
+_narmock_state_type_time *_narwhal_mock_time();
 
 /*
 NARMOCK_DECLARATION add

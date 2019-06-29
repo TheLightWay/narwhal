@@ -2,7 +2,30 @@
 NARMOCK_DECLARATIONS_BEGIN
 */
 
+#include <time.h>
+
 #include "dummy_functions.h"
+
+/*
+NARMOCK_DECLARATION time
+NARMOCK_LINKER_FLAGS -Wl,--wrap=time
+*/
+
+typedef struct _narmock_parameters_time
+{
+    time_t *arg1;
+} _narmock_parameters_time;
+
+typedef struct _narmock_state_type_time _narmock_state_type_time;
+
+struct _narmock_state_type_time
+{
+    _narmock_state_type_time *(*mock_return)(time_t return_value);
+    _narmock_state_type_time *(*mock_implementation)(time_t (*implementation)(time_t *arg1));
+    _narmock_state_type_time *(*disable_mock)(void);
+};
+
+_narmock_state_type_time *_narwhal_mock_time();
 
 /*
 NARMOCK_DECLARATION add
@@ -50,6 +73,79 @@ _narmock_state_type_output_message *_narwhal_mock_output_message();
 /*
 NARMOCK_DECLARATIONS_END
 */
+
+/*
+NARMOCK_IMPLEMENTATION time
+*/
+
+time_t __real_time(time_t *arg1);
+
+typedef struct _narmock_state_private_type_time _narmock_state_private_type_time;
+
+struct _narmock_state_private_type_time
+{
+    _narmock_state_type_time public;
+
+    int state;
+    time_t return_value;
+    time_t (*implementation)(time_t *arg1);
+};
+
+_narmock_state_type_time *_narmock_function_mock_return_time(time_t return_value);
+_narmock_state_type_time *_narmock_function_mock_implementation_time(time_t (*implementation)(time_t *arg1));
+_narmock_state_type_time *_narmock_function_disable_mock_time();
+
+_narmock_state_private_type_time _narmock_state_global_time =
+{
+    .public = {
+        .mock_return = _narmock_function_mock_return_time,
+        .mock_implementation = _narmock_function_mock_implementation_time,
+        .disable_mock = _narmock_function_disable_mock_time
+    },
+
+    .state = 0
+};
+
+time_t __wrap_time(time_t *arg1)
+{
+    switch (_narmock_state_global_time.state)
+    {
+        case 1:
+            return _narmock_state_global_time.return_value;
+        case 2:
+            return _narmock_state_global_time.implementation(arg1);
+        default:
+            return __real_time(arg1);
+    }
+}
+
+_narmock_state_type_time *_narmock_function_mock_return_time(time_t return_value)
+{
+    _narmock_state_global_time.state = 1;
+    _narmock_state_global_time.return_value = return_value;
+
+    return &_narmock_state_global_time.public;
+}
+
+_narmock_state_type_time *_narmock_function_mock_implementation_time(time_t (*implementation)(time_t *arg1))
+{
+    _narmock_state_global_time.state = 2;
+    _narmock_state_global_time.implementation = implementation;
+
+    return &_narmock_state_global_time.public;
+}
+
+_narmock_state_type_time *_narmock_function_disable_mock_time()
+{
+    _narmock_state_global_time.state = 0;
+
+    return &_narmock_state_global_time.public;
+}
+
+_narmock_state_type_time *_narwhal_mock_time()
+{
+    return &_narmock_state_global_time.public;
+}
 
 /*
 NARMOCK_IMPLEMENTATION add
