@@ -219,39 +219,10 @@ class FunctionDeclarationParser(object):
             if self.current.is_punctuation(";"):
                 break
 
-            param = []
-
-            while self.current and not (
-                self.current.type == "PUNCTUATION"
-                and (
-                    self.current.value == ","
-                    and len(self.bracket_stack) == 1
-                    or self.current.value == ")"
-                    and not self.bracket_stack
-                )
-            ):
-                if self.current.is_punctuation(";"):
-                    break
-
-                param.append(self.current)
-                self.next()
+            param = self.parse_parameter("arg" + str(len(parameters) + 1))
 
             if param:
-                param_name = "arg" + str(len(parameters) + 1)
-                parameter = []
-
-                tokens = iter(reversed(param))
-
-                for token in tokens:
-                    if token.type == "IDENTIFIER":
-                        parameter = [param_name] + parameter
-                        break
-                    parameter = [token.value] + parameter
-
-                for token in tokens:
-                    parameter = [token.value] + parameter
-
-                parameters.append((param_name, self.format_type(" ".join(parameter))))
+                parameters.append(param)
 
             if self.current and self.current.value == ",":
                 self.next()
@@ -264,6 +235,42 @@ class FunctionDeclarationParser(object):
             return_type,
             IncludeDirective.from_source_context(self.source_context),
         )
+
+    def parse_parameter(self, param_name):
+        tokens = []
+
+        while self.current and not (
+            self.current.type == "PUNCTUATION"
+            and (
+                self.current.value == ","
+                and len(self.bracket_stack) == 1
+                or self.current.value == ")"
+                and not self.bracket_stack
+            )
+        ):
+            if self.current.is_punctuation(";"):
+                break
+
+            tokens.append(self.current)
+            self.next()
+
+        if not tokens:
+            return
+
+        parameter = []
+
+        reversed_tokens = iter(reversed(tokens))
+
+        for token in reversed_tokens:
+            if token.type == "IDENTIFIER":
+                parameter = [param_name] + parameter
+                break
+            parameter = [token.value] + parameter
+
+        for token in reversed_tokens:
+            parameter = [token.value] + parameter
+
+        return param_name, self.format_type(" ".join(parameter))
 
     @staticmethod
     def format_type(string):
