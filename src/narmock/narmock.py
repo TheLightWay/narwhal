@@ -71,7 +71,7 @@ class IncludeDirective(namedtuple("IncludeDirective", ["path", "system"])):
         return cls(os.path.abspath(source_context[-1].filename), False)
 
 
-class Token(namedtuple("Token", ["type", "value", "span"])):
+class Token(namedtuple("Token", ["type", "value"])):
     def is_punctuation(self, value):
         return self.type == "PUNCTUATION" and self.value == value
 
@@ -135,7 +135,7 @@ class FunctionDeclarationParser(object):
     def tokenize(cls, string):
         for match in cls.regex.finditer(string):
             if match.lastgroup not in cls.ignored_tokens:
-                yield Token(match.lastgroup, match.group().strip(), match.span())
+                yield Token(match.lastgroup, match.group().strip())
 
     def __iter__(self):
         while self.next():
