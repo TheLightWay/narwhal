@@ -3,6 +3,7 @@ NARMOCK_DECLARATIONS_BEGIN
 */
 
 #include <time.h>
+#include <unistd.h>
 
 #include "dummy_functions.h"
 
@@ -26,6 +27,27 @@ struct _narmock_state_type_time
 };
 
 _narmock_state_type_time *_narwhal_mock_time();
+
+/*
+NARMOCK_DECLARATION pipe
+NARMOCK_LINKER_FLAGS -Wl,--wrap=pipe
+*/
+
+typedef struct _narmock_parameters_pipe
+{
+    int arg1[2];
+} _narmock_parameters_pipe;
+
+typedef struct _narmock_state_type_pipe _narmock_state_type_pipe;
+
+struct _narmock_state_type_pipe
+{
+    _narmock_state_type_pipe *(*mock_return)(int return_value);
+    _narmock_state_type_pipe *(*mock_implementation)(int (*implementation)(int arg1[2]));
+    _narmock_state_type_pipe *(*disable_mock)(void);
+};
+
+_narmock_state_type_pipe *_narwhal_mock_pipe();
 
 /*
 NARMOCK_DECLARATION add
@@ -145,6 +167,79 @@ _narmock_state_type_time *_narmock_function_disable_mock_time()
 _narmock_state_type_time *_narwhal_mock_time()
 {
     return &_narmock_state_global_time.public;
+}
+
+/*
+NARMOCK_IMPLEMENTATION pipe
+*/
+
+int __real_pipe(int arg1[2]);
+
+typedef struct _narmock_state_private_type_pipe _narmock_state_private_type_pipe;
+
+struct _narmock_state_private_type_pipe
+{
+    _narmock_state_type_pipe public;
+
+    int state;
+    int return_value;
+    int (*implementation)(int arg1[2]);
+};
+
+_narmock_state_type_pipe *_narmock_function_mock_return_pipe(int return_value);
+_narmock_state_type_pipe *_narmock_function_mock_implementation_pipe(int (*implementation)(int arg1[2]));
+_narmock_state_type_pipe *_narmock_function_disable_mock_pipe();
+
+_narmock_state_private_type_pipe _narmock_state_global_pipe =
+{
+    .public = {
+        .mock_return = _narmock_function_mock_return_pipe,
+        .mock_implementation = _narmock_function_mock_implementation_pipe,
+        .disable_mock = _narmock_function_disable_mock_pipe
+    },
+
+    .state = 0
+};
+
+int __wrap_pipe(int arg1[2])
+{
+    switch (_narmock_state_global_pipe.state)
+    {
+        case 1:
+            return _narmock_state_global_pipe.return_value;
+        case 2:
+            return _narmock_state_global_pipe.implementation(arg1);
+        default:
+            return __real_pipe(arg1);
+    }
+}
+
+_narmock_state_type_pipe *_narmock_function_mock_return_pipe(int return_value)
+{
+    _narmock_state_global_pipe.state = 1;
+    _narmock_state_global_pipe.return_value = return_value;
+
+    return &_narmock_state_global_pipe.public;
+}
+
+_narmock_state_type_pipe *_narmock_function_mock_implementation_pipe(int (*implementation)(int arg1[2]))
+{
+    _narmock_state_global_pipe.state = 2;
+    _narmock_state_global_pipe.implementation = implementation;
+
+    return &_narmock_state_global_pipe.public;
+}
+
+_narmock_state_type_pipe *_narmock_function_disable_mock_pipe()
+{
+    _narmock_state_global_pipe.state = 0;
+
+    return &_narmock_state_global_pipe.public;
+}
+
+_narmock_state_type_pipe *_narwhal_mock_pipe()
+{
+    return &_narmock_state_global_pipe.public;
 }
 
 /*

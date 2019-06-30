@@ -1,4 +1,5 @@
 #include <time.h>
+#include <unistd.h>
 
 #include "__mocks__.h"
 #include "dummy_functions.h"
@@ -53,4 +54,24 @@ TEST(time_function)
     ASSERT_GE(time(NULL), start);
 }
 
-TEST_GROUP(mocking_tests, { add_function, output_message_function, time_function });
+TEST(pipe_function)
+{
+    MOCK(pipe)->mock_return(42);
+
+    int fd[2] = { 0, 0 };
+
+    ASSERT_EQ(pipe(fd), 42);
+    ASSERT_EQ(fd[0], 0);
+    ASSERT_EQ(fd[1], 0);
+
+    MOCK(pipe)->disable_mock();
+
+    ASSERT_EQ(pipe(fd), 0);
+    ASSERT_NE(fd[0], 0);
+    ASSERT_NE(fd[1], 0);
+
+    close(fd[0]);
+    close(fd[1]);
+}
+
+TEST_GROUP(mocking_tests, { add_function, output_message_function, time_function, pipe_function });

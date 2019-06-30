@@ -237,18 +237,21 @@ class FunctionDeclarationParser(object):
                 self.next()
 
             if param:
-                param_name = next(
-                    (token for token in reversed(param) if token.type == "IDENTIFIER"),
-                    None,
-                )
+                param_name = "arg" + str(len(parameters) + 1)
+                parameter = []
 
-                if param_name is None:
-                    break
+                tokens = iter(reversed(param))
 
-                param.remove(param_name)
-                parameters.append(
-                    ("arg" + str(len(parameters) + 1), [t.value for t in param])
-                )
+                for token in tokens:
+                    if token.type == "IDENTIFIER":
+                        parameter = [param_name] + parameter
+                        break
+                    parameter = [token.value] + parameter
+
+                for token in tokens:
+                    parameter = [token.value] + parameter
+
+                parameters.append((param_name, self.format_type(" ".join(parameter))))
 
             if self.current and self.current.value == ",":
                 self.next()
@@ -261,6 +264,10 @@ class FunctionDeclarationParser(object):
             return_type,
             IncludeDirective.from_source_context(self.source_context),
         )
+
+    @staticmethod
+    def format_type(string):
+        return re.sub(r" (\[) |([(*]) | ([\])])", r"\1\2\3", string)
 
 
 def template(string):
@@ -457,8 +464,7 @@ class CodeGenerator(object):
         )
 
         function_parameter_fields = "\n    ".join(
-            (" ".join(param_type) + " " + param_name + ";").replace("* ", "*")
-            for param_name, param_type in function.parameters
+            parameter + ";" for _, parameter in function.parameters
         )
         parameters_struct = "_narmock_parameters_" + func_name
 
@@ -466,8 +472,7 @@ class CodeGenerator(object):
         real_func = "__real_" + func_name
 
         function_parameters = ", ".join(
-            (" ".join(param_type) + " " + param_name).replace("* ", "*")
-            for param_name, param_type in function.parameters
+            parameter for _, parameter in function.parameters
         )
 
         parameter_arguments = ", ".join(name for name, _ in function.parameters)

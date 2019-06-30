@@ -2,6 +2,7 @@
 #define TEST_MOCKS_H
 
 #include <time.h>
+#include <unistd.h>
 
 #include "dummy_functions.h"
 
@@ -25,6 +26,27 @@ struct _narmock_state_type_time
 };
 
 _narmock_state_type_time *_narwhal_mock_time();
+
+/*
+NARMOCK_DECLARATION pipe
+NARMOCK_LINKER_FLAGS -Wl,--wrap=pipe
+*/
+
+typedef struct _narmock_parameters_pipe
+{
+    int arg1[2];
+} _narmock_parameters_pipe;
+
+typedef struct _narmock_state_type_pipe _narmock_state_type_pipe;
+
+struct _narmock_state_type_pipe
+{
+    _narmock_state_type_pipe *(*mock_return)(int return_value);
+    _narmock_state_type_pipe *(*mock_implementation)(int (*implementation)(int arg1[2]));
+    _narmock_state_type_pipe *(*disable_mock)(void);
+};
+
+_narmock_state_type_pipe *_narwhal_mock_pipe();
 
 /*
 NARMOCK_DECLARATION add
